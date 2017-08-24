@@ -1,0 +1,13 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "fCSHWojsckzvaLUoo0vuU690CvY=",
+			"path": "github.com/mattn/go-sqlite3",
+			"revision": "e28cd440fabdd39b9520344bc26829f61db40ece",
+			"revisionTime": "2015-03-23T23:48:55Z"
+		}
+	],
+	"rootPath": "github.com/drewis/histdb"
+}
