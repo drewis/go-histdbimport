@@ -48,22 +48,27 @@ var boringCommands = []string{
 
 //Reads the entry, traversing multiple lines if needed
 func readEntry(s *bufio.Scanner) (string, bool) {
-	ok := s.Scan()
-	if !ok {
-		return "", false
-	}
-	entry := s.Text()
-	entryLen := len(entry)
-	//multiline cmds end with slash
-	if entry[entryLen-1] == '\\' {
-		entry2, ok := readEntry(s)
+	var ok bool
+	entry := ""
+	for {
+		ok = s.Scan()
 		if !ok {
-			return "", false
+			break
 		}
-		//trim the slash and restore the new line
-		return entry[:entryLen-1] + "\n" + entry2, true
+		entry += s.Text()
+		entryLen := len(entry)
+		if entryLen == 0 {
+			break
+		}
+		//multiline cmds end with slash
+		if entry[entryLen-1] == '\\' {
+			//trim the slash and restore the new line
+			entry = entry[:entryLen-1] + "\n"
+			continue
+		}
+		break
 	}
-	return entry, true
+	return entry, ok
 }
 
 //Parses an entry string into a basicEntry

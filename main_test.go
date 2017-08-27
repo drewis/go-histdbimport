@@ -40,6 +40,11 @@ world"` {
 		t.Error(entry)
 	}
 	entry, _ = readEntry(scanner)
+	if entry != `: 1472100290:0;git commit -m 'rebuild the dam
+` {
+		t.Error(entry)
+	}
+	entry, _ = readEntry(scanner)
 	if entry != `: 1472100284:0;echo "hello
 cruel
 
