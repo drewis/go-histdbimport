@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"database/sql"
 	"errors"
+	"flag"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
@@ -17,14 +18,8 @@ import (
 //used for dir column
 var homeDir = os.Getenv("HOME")
 
-//location of database file
-var databaseFile = filepath.Join(homeDir, ".histdb/zsh-history.db")
-
-//location of history file
-var historyFile = filepath.Join(homeDir, ".zsh_history")
-
-//set in main, used for host column
-var hostName = "UNKNOWN"
+//used for host column
+var hostName string
 
 //used for session column
 var sessionNum = "0"
@@ -44,6 +39,24 @@ var boringCommands = []string{
 	"ls",
 	"top",
 	"htop",
+}
+
+//location of database file
+var databaseFile string
+
+//location of history file
+var historyFile string
+
+func init() {
+	host, err := os.Hostname()
+	if err != nil {
+		host = "UNKNOWN"
+	}
+	flag.StringVar(&databaseFile, "database", filepath.Join(homeDir, ".histdb/zsh-history.db"),
+		"location of database file")
+	flag.StringVar(&historyFile, "history", filepath.Join(homeDir, ".zsh_history"),
+		"location of history file")
+	flag.StringVar(&hostName, "host", host, "value for host column")
 }
 
 //Reads the entry, traversing multiple lines if needed
@@ -143,12 +156,7 @@ func insertEntry(db *sql.DB, entry basicEntry) error {
 }
 
 func main() {
-
-	var err error
-	hostName, err = os.Hostname()
-	if err != nil {
-		log.Fatal(err)
-	}
+	flag.Parse()
 
 	db, err := sql.Open("sqlite3", databaseFile)
 	if err != nil {
