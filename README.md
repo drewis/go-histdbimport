@@ -5,7 +5,7 @@ An tool for importing old zsh history into [histdb](https://github.com/larkery/z
 ### Usage
 Edit `main.go` if needed
 
-    $ go install .
+    $ go get github.com/drewis/go-histdbimport
     $ go-histdbimport
 
 ### License
