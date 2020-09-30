@@ -129,12 +129,16 @@ func beginTransaction(db *sql.DB) (txx *transaction, err error) {
 	t := &transaction{Tx: tx}
 	defer func() {
 		if err != nil {
-			t.Rollback()
-			for _, x := range []interface{ Close() error }{t.cmdStmt, t.placeStmt, t.histStmt} {
-				if x != nil {
-					x.Close()
-				}
+			if t.cmdStmt != nil {
+				t.cmdStmt.Close()
 			}
+			if t.placeStmt != nil {
+				t.placeStmt.Close()
+			}
+			if t.histStmt != nil {
+				t.histStmt.Close()
+			}
+			t.Rollback()
 		}
 	}()
 
