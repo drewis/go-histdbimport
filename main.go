@@ -34,12 +34,12 @@ type basicEntry struct {
 	cmd      string
 }
 
-var boringCommands = []string{
+var boringCommands = strings.Join([]string{
 	"cd",
 	"ls",
 	"top",
 	"htop",
-}
+}, ",")
 
 //location of database file
 var databaseFile string
@@ -56,6 +56,7 @@ func init() {
 		"location of database file")
 	flag.StringVar(&historyFile, "history", filepath.Join(homeDir, ".zsh_history"),
 		"location of history file")
+	flag.StringVar(&boringCommands, "ignore", boringCommands, "commands to ignore during import")
 	flag.StringVar(&hostName, "host", host, "value for host column")
 }
 
@@ -172,6 +173,8 @@ func main() {
 
 	scanner := bufio.NewScanner(fd)
 
+	bcs := strings.Split(boringCommands, ",")
+
 outer:
 	for {
 		entry, ok := readEntry(scanner)
@@ -192,7 +195,7 @@ outer:
 			log.Fatal(err)
 		}
 
-		for _, bc := range boringCommands {
+		for _, bc := range bcs {
 			if parsed.cmd == bc {
 				log.Printf("Skipping %+v\n", parsed)
 				continue outer
