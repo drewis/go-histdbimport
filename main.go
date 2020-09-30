@@ -20,7 +20,7 @@ import (
 )
 
 //used for dir column
-var homeDir = os.Getenv("HOME")
+var unknownDir string
 
 //used for host column
 var hostName string
@@ -56,12 +56,17 @@ func init() {
 	if err != nil {
 		host = "UNKNOWN"
 	}
-	flag.StringVar(&databaseFile, "database", filepath.Join(homeDir, ".histdb/zsh-history.db"),
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	flag.StringVar(&databaseFile, "database", filepath.Join(home, ".histdb/zsh-history.db"),
 		"location of database file")
-	flag.StringVar(&historyFile, "history", filepath.Join(homeDir, ".zsh_history"),
+	flag.StringVar(&historyFile, "history", filepath.Join(home, ".zsh_history"),
 		"location of history file")
 	flag.StringVar(&boringCommands, "ignore", boringCommands, "commands to ignore during import")
 	flag.StringVar(&hostName, "host", host, "value for host column")
+	flag.StringVar(&unknownDir, "dir", home, "directory used for command import")
 }
 
 //Reads the entry, traversing multiple lines if needed
@@ -179,11 +184,11 @@ func (t *transaction) insertEntry(entry basicEntry) (err error) {
 	if err != nil {
 		return err
 	}
-	_, err = t.placeStmt.Exec(hostName, homeDir)
+	_, err = t.placeStmt.Exec(hostName, unknownDir)
 	if err != nil {
 		return err
 	}
-	_, err = t.histStmt.Exec(sessionNum, retVal, entry.started, entry.duration, entry.cmd, hostName, homeDir)
+	_, err = t.histStmt.Exec(sessionNum, retVal, entry.started, entry.duration, entry.cmd, hostName, unknownDir)
 	if err != nil {
 		return err
 	}

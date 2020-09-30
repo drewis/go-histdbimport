@@ -185,7 +185,7 @@ world"` {
 	if host != hostName {
 		t.Error(host)
 	}
-	if dir != homeDir {
+	if dir != unknownDir {
 		t.Error(dir)
 	}
 
