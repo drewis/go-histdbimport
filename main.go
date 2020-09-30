@@ -8,11 +8,14 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+
+	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 )
 
 //used for dir column
@@ -171,7 +174,8 @@ func main() {
 	}
 	defer fd.Close()
 
-	scanner := bufio.NewScanner(fd)
+	r := transform.NewReader(fd, unicode.UTF8.NewDecoder())
+	scanner := bufio.NewScanner(r)
 
 	bcs := strings.Split(boringCommands, ",")
 
