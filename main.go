@@ -8,15 +8,19 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
-	_ "github.com/mattn/go-sqlite3"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+
+	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 )
 
 //used for dir column
-var homeDir = os.Getenv("HOME")
+var unknownDir string
 
 //used for host column
 var hostName string
@@ -34,12 +38,12 @@ type basicEntry struct {
 	cmd      string
 }
 
-var boringCommands = []string{
+var boringCommands = strings.Join([]string{
 	"cd",
 	"ls",
 	"top",
 	"htop",
-}
+}, ",")
 
 //location of database file
 var databaseFile string
@@ -52,11 +56,17 @@ func init() {
 	if err != nil {
 		host = "UNKNOWN"
 	}
-	flag.StringVar(&databaseFile, "database", filepath.Join(homeDir, ".histdb/zsh-history.db"),
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	flag.StringVar(&databaseFile, "database", filepath.Join(home, ".histdb/zsh-history.db"),
 		"location of database file")
-	flag.StringVar(&historyFile, "history", filepath.Join(homeDir, ".zsh_history"),
+	flag.StringVar(&historyFile, "history", filepath.Join(home, ".zsh_history"),
 		"location of history file")
+	flag.StringVar(&boringCommands, "ignore", boringCommands, "commands to ignore during import")
 	flag.StringVar(&hostName, "host", host, "value for host column")
+	flag.StringVar(&unknownDir, "dir", home, "directory used for command import")
 }
 
 //Reads the entry, traversing multiple lines if needed
@@ -104,35 +114,34 @@ func parseEntry(entry string) (basicEntry, error) {
 	}, nil
 }
 
-func insertEntry(db *sql.DB, entry basicEntry) error {
+type transaction struct {
+	*sql.Tx
+	cmdStmt   *sql.Stmt
+	placeStmt *sql.Stmt
+	histStmt  *sql.Stmt
+}
+
+func beginTransaction(db *sql.DB) (txx *transaction, err error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	st, err := tx.Prepare("INSERT INTO commands (argv) VALUES (?);")
-	if err != nil {
-		return err
-	}
-	_, err = st.Exec(entry.cmd)
-	if err != nil {
-		return err
-	}
-	st, err = tx.Prepare("INSERT INTO places (host,dir) VALUES (?, ?);")
-	_, err = st.Exec(hostName, homeDir)
-	if err != nil {
-		return err
-	}
-	st, err = tx.Prepare(`INSERT INTO history
-	(session, command_id, place_id, exit_status, start_time, duration)
-	SELECT ?, commands.rowid, places.rowid, ?, ?, ?
-	FROM commands, places
-	WHERE commands.argv = ? AND places.host = ? AND places.dir = ?;`)
-	_, err = st.Exec(sessionNum, retVal, entry.started, entry.duration,
-		entry.cmd, hostName, homeDir)
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
+	t := &transaction{Tx: tx}
+	defer func() {
+		if err != nil {
+			if t.cmdStmt != nil {
+				t.cmdStmt.Close()
+			}
+			if t.placeStmt != nil {
+				t.placeStmt.Close()
+			}
+			if t.histStmt != nil {
+				t.histStmt.Close()
+			}
+			t.Rollback()
+		}
+	}()
+
 	/*
 	   insert into commands (argv) values (${cmd});
 	   insert into places   (host, dir) values (${HISTDB_HOST}, ${pwd});
@@ -153,6 +162,42 @@ func insertEntry(db *sql.DB, entry basicEntry) error {
 	     places.dir = ${pwd}
 	   ;
 	*/
+	t.cmdStmt, err = t.Prepare("INSERT INTO commands (argv) VALUES (?);")
+	if err != nil {
+		return nil, err
+	}
+	t.placeStmt, err = t.Prepare("INSERT INTO places (host, dir) VALUES (?, ?);")
+	if err != nil {
+		return nil, err
+	}
+	t.histStmt, err = t.Prepare(`
+		INSERT INTO history (session, command_id, place_id, exit_status, start_time, duration)
+			SELECT ?, commands.rowid, places.rowid, ?, ?, ?
+			FROM commands, places
+			WHERE commands.argv = ? AND places.host = ? AND places.dir = ?;
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	return t, nil
+}
+
+func (t *transaction) insertEntry(entry basicEntry) (err error) {
+	_, err = t.cmdStmt.Exec(entry.cmd)
+	if err != nil {
+		return err
+	}
+	_, err = t.placeStmt.Exec(hostName, unknownDir)
+	if err != nil {
+		return err
+	}
+	_, err = t.histStmt.Exec(sessionNum, retVal, entry.started, entry.duration, entry.cmd, hostName, unknownDir)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func main() {
@@ -164,13 +209,34 @@ func main() {
 	}
 	defer db.Close()
 
+	tx, err := beginTransaction(db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	fd, err := os.Open(historyFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer fd.Close()
 
-	scanner := bufio.NewScanner(fd)
+	err = readAndInsert(tx, fd)
+	if err != nil {
+		tx.Rollback()
+		log.Fatal(err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func readAndInsert(tx *transaction, r io.Reader) error {
+	r = transform.NewReader(r, unicode.UTF8.NewDecoder())
+	scanner := bufio.NewScanner(r)
+
+	bcs := strings.Split(boringCommands, ",")
 
 outer:
 	for {
@@ -182,17 +248,17 @@ outer:
 			continue
 		}
 
-		err = scanner.Err()
+		err := scanner.Err()
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		parsed, err := parseEntry(entry)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
-		for _, bc := range boringCommands {
+		for _, bc := range bcs {
 			if parsed.cmd == bc {
 				log.Printf("Skipping %+v\n", parsed)
 				continue outer
@@ -200,10 +266,11 @@ outer:
 		}
 
 		log.Printf("Inserting %+v\n", parsed)
-		err = insertEntry(db, parsed)
+		err = tx.insertEntry(parsed)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
 
+	return nil
 }

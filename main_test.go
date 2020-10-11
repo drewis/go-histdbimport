@@ -130,7 +130,12 @@ func TestInsertEntry(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = insertEntry(db, basicEntry{
+	tx, err := beginTransaction(db)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = tx.insertEntry(basicEntry{
 		started:  "1472100284",
 		duration: "3",
 		cmd: `echo "hello
@@ -139,6 +144,9 @@ cruel
 world"`,
 	})
 	if err != nil {
+		t.Error(err)
+	}
+	if err = tx.Commit(); err != nil {
 		t.Error(err)
 	}
 	rows, err := db.Query("SELECT rowid,argv from commands;")
@@ -177,7 +185,7 @@ world"` {
 	if host != hostName {
 		t.Error(host)
 	}
-	if dir != homeDir {
+	if dir != unknownDir {
 		t.Error(dir)
 	}
 
